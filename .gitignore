@@ -1,0 +1,25 @@
+# Compiled binaries
+nas-watchdog
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Local data and log directories
+data/
+*.jsonl
+nas-watchdog.jsonl
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Operating System Files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  nas-watchdog:
+    build: .
+    container_name: nas-watchdog
+    restart: unless-stopped
+    pid: host # Shares host process namespace to access host-level cpu/memory metrics in /proc
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro # Needed for docker-cli commands
+      - /:/host:ro # Mounted to /host to check host-level disk capacity via df/statfs
+      - ./data:/app/data # Persistent directory for conversation logs (.jsonl)
+    environment:
+      - TELEGRAM_BOT_TOKEN=YOUR_TELEGRAM_BOT_TOKEN_HERE
+      - TELEGRAM_USER_ID=YOUR_TELEGRAM_USER_ID_HERE # Authorized User ID (integer)
+      - GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
+      - GEMINI_MODEL=gemini-1.5-flash
+      - GEMINI_API_URL=https://generativelanguage.googleapis.com/v1beta/models/
+      - CHECK_INTERVAL_MINUTES=5
+      - CPU_THRESHOLD_PERCENT=80.0
+      - MEMORY_THRESHOLD_PERCENT=80.0
+      - DISK_THRESHOLD_PERCENT=85.0
+      - LOG_FILE_PATH=/app/data/nas-watchdog.jsonl
