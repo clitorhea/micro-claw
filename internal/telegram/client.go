@@ -75,7 +75,16 @@ func (c *Client) SendMessage(ctx context.Context, chatID int64, text string) (*M
 		"text":       text,
 		"parse_mode": "Markdown",
 	}
-	return c.post(ctx, "sendMessage", payload)
+	msg, err := c.post(ctx, "sendMessage", payload)
+	if err != nil {
+		log.Printf("[Telegram] Markdown sendMessage failed: %v. Retrying as plain text...", err)
+		payloadPlain := map[string]interface{}{
+			"chat_id": chatID,
+			"text":    text,
+		}
+		return c.post(ctx, "sendMessage", payloadPlain)
+	}
+	return msg, nil
 }
 
 func (c *Client) SendApprovalKeyboard(ctx context.Context, chatID int64, text string, actionID string) (*Message, error) {
@@ -93,7 +102,17 @@ func (c *Client) SendApprovalKeyboard(ctx context.Context, chatID int64, text st
 		"parse_mode":   "Markdown",
 		"reply_markup": keyboard,
 	}
-	return c.post(ctx, "sendMessage", payload)
+	msg, err := c.post(ctx, "sendMessage", payload)
+	if err != nil {
+		log.Printf("[Telegram] Markdown SendApprovalKeyboard failed: %v. Retrying as plain text...", err)
+		payloadPlain := map[string]interface{}{
+			"chat_id":      chatID,
+			"text":         text,
+			"reply_markup": keyboard,
+		}
+		return c.post(ctx, "sendMessage", payloadPlain)
+	}
+	return msg, nil
 }
 
 func (c *Client) AnswerCallbackQuery(ctx context.Context, callbackQueryID string, text string) error {
@@ -113,6 +132,15 @@ func (c *Client) EditMessageText(ctx context.Context, chatID int64, messageID in
 		"parse_mode": "Markdown",
 	}
 	_, err := c.post(ctx, "editMessageText", payload)
+	if err != nil {
+		log.Printf("[Telegram] Markdown editMessageText failed: %v. Retrying as plain text...", err)
+		payloadPlain := map[string]interface{}{
+			"chat_id":    chatID,
+			"message_id": messageID,
+			"text":       text,
+		}
+		_, err = c.post(ctx, "editMessageText", payloadPlain)
+	}
 	return err
 }
 

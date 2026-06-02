@@ -220,6 +220,7 @@ func (a *Agent) runConversationLoop(ctx context.Context) {
 
 		if responseContent == nil || len(responseContent.Parts) == 0 {
 			log.Println("[Agent] Received empty response from LLM")
+			_, _ = a.tgClient.SendMessage(ctx, a.cfg.TelegramUserID, "⚠️ *LLM Error:* Received an empty response from the AI router.")
 			return
 		}
 
@@ -472,9 +473,13 @@ func convertHistoryToOpenAI(history []Content) []OpenAIMessage {
 					textParts = append(textParts, part.Text)
 				}
 				if part.FunctionCall != nil {
+					toolCallID := part.FunctionCall.ToolCallID
+					if toolCallID == "" {
+						toolCallID = "call_" + part.FunctionCall.Name
+					}
 					argsBytes, _ := json.Marshal(part.FunctionCall.Args)
 					toolCalls = append(toolCalls, OpenAIToolCall{
-						ID:   part.FunctionCall.ToolCallID,
+						ID:   toolCallID,
 						Type: "function",
 						Function: OpenAIFunctionCall{
 							Name:      part.FunctionCall.Name,
@@ -559,6 +564,15 @@ func convertParamsToOpenAI(param tools.FunctionParameter) tools.FunctionParamete
 	return newParam
 }
 
+func isTextOnly(c Content) bool {
+	for _, p := range c.Parts {
+		if p.FunctionCall != nil || p.FunctionResponse != nil {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *Agent) pruneHistory() {
 	a.historyMu.Lock()
 	defer a.historyMu.Unlock()
@@ -569,17 +583,27 @@ func (a *Agent) pruneHistory() {
 	}
 
 	excess := len(a.history) - maxHistorySize
-	startIdx := excess
-	for startIdx < len(a.history) && a.history[startIdx].Role != "user" {
-		startIdx++
+	
+	// Scan forward from excess to find the first text-only user message
+	startIdx := -1
+	for i := excess; i < len(a.history); i++ {
+		if a.history[i].Role == "user" && isTextOnly(a.history[i]) {
+			startIdx = i
+			break
+		}
 	}
 
-	if startIdx < len(a.history) {
-		a.history = a.history[startIdx:]
-	} else {
-		a.history = a.history[len(a.history)-maxHistorySize:]
-		if len(a.history) > 0 {
-			a.history[0].Role = "user"
+	// If not found scanning forward, scan backward from excess to find the closest text-only user message
+	if startIdx == -1 {
+		for i := excess - 1; i >= 0; i-- {
+			if a.history[i].Role == "user" && isTextOnly(a.history[i]) {
+				startIdx = i
+				break
+			}
 		}
+	}
+
+	if startIdx > 0 && startIdx < len(a.history) {
+		a.history = a.history[startIdx:]
 	}
 }
