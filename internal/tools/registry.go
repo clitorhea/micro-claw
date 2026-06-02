@@ -39,6 +39,13 @@ type ToolDefinition struct {
 	Execute     func(ctx context.Context, args map[string]interface{}) (string, error)
 }
 
+type ScheduledTask struct {
+	Name     string
+	Interval time.Duration
+	Command  string
+	Cancel   context.CancelFunc
+}
+
 type Registry struct {
 	tgClient       *telegram.Client
 	chatID         int64
@@ -46,6 +53,10 @@ type Registry struct {
 	pendingActions map[string]chan bool
 	pendingMsgs    map[string]int64 // maps actionID to telegram messageID
 	mutex          sync.Mutex
+
+	// In-memory scheduler fields
+	schedulerTasks map[string]*ScheduledTask
+	schedulerMutex sync.Mutex
 }
 
 func NewRegistry(tgClient *telegram.Client, chatID int64) *Registry {
@@ -55,6 +66,7 @@ func NewRegistry(tgClient *telegram.Client, chatID int64) *Registry {
 		tools:          make(map[string]ToolDefinition),
 		pendingActions: make(map[string]chan bool),
 		pendingMsgs:    make(map[string]int64),
+		schedulerTasks: make(map[string]*ScheduledTask),
 	}
 	r.registerAllTools()
 	return r
@@ -73,6 +85,16 @@ func (r *Registry) GetToolsSchema() []Tool {
 func (r *Registry) HasTool(name string) bool {
 	_, ok := r.tools[name]
 	return ok
+}
+
+func (r *Registry) UnscheduleAll() {
+	r.schedulerMutex.Lock()
+	defer r.schedulerMutex.Unlock()
+	for name, task := range r.schedulerTasks {
+		log.Printf("[Scheduler] Stopping scheduled task: %s", name)
+		task.Cancel()
+	}
+	r.schedulerTasks = make(map[string]*ScheduledTask)
 }
 
 func (r *Registry) Execute(ctx context.Context, name string, args map[string]interface{}) (string, error) {
@@ -397,6 +419,249 @@ func (r *Registry) registerAllTools() {
 			}
 
 			return strings.Join(matches, "\n"), nil
+		},
+	}
+
+	// 8. schedule_task
+	r.tools["schedule_task"] = ToolDefinition{
+		Declaration: FunctionDeclaration{
+			Name:        "schedule_task",
+			Description: "Schedule a shell command to execute repeatedly at a regular interval (in minutes)",
+			Parameters: FunctionParameter{
+				Type: "OBJECT",
+				Properties: map[string]FunctionParameter{
+					"name": {
+						Type:        "STRING",
+						Description: "Unique name for the scheduled task",
+					},
+					"interval_minutes": {
+						Type:        "INTEGER",
+						Description: "Time interval in minutes between executions",
+					},
+					"command": {
+						Type:        "STRING",
+						Description: "The command to run periodically on the system",
+					},
+				},
+				Required: []string{"name", "interval_minutes", "command"},
+			},
+		},
+		IsStateful: true,
+		Execute: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			name, ok := args["name"].(string)
+			if !ok || name == "" {
+				return "", fmt.Errorf("missing or invalid 'name'")
+			}
+			intervalVal, ok := args["interval_minutes"]
+			if !ok {
+				return "", fmt.Errorf("missing 'interval_minutes'")
+			}
+			var intervalMin int
+			switch v := intervalVal.(type) {
+			case float64:
+				intervalMin = int(v)
+			case int:
+				intervalMin = v
+			default:
+				return "", fmt.Errorf("invalid 'interval_minutes' type")
+			}
+			if intervalMin <= 0 {
+				return "", fmt.Errorf("interval_minutes must be positive")
+			}
+			command, ok := args["command"].(string)
+			if !ok || command == "" {
+				return "", fmt.Errorf("missing or invalid 'command'")
+			}
+
+			r.schedulerMutex.Lock()
+			defer r.schedulerMutex.Unlock()
+
+			if _, exists := r.schedulerTasks[name]; exists {
+				return "", fmt.Errorf("a task with the name '%s' already exists", name)
+			}
+
+			taskCtx, cancel := context.WithCancel(context.Background())
+			task := &ScheduledTask{
+				Name:     name,
+				Interval: time.Duration(intervalMin) * time.Minute,
+				Command:  command,
+				Cancel:   cancel,
+			}
+			r.schedulerTasks[name] = task
+
+			// Start the scheduler thread
+			go func() {
+				ticker := time.NewTicker(task.Interval)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ticker.C:
+						log.Printf("[Scheduler] Executing scheduled command '%s': %s", task.Name, task.Command)
+						out, err := runCmd("sh", "-c", task.Command)
+						status := "SUCCESS ✅"
+						if err != nil {
+							status = fmt.Sprintf("FAILED ❌ (%v)", err)
+						}
+						// Direct message updates to the Telegram user
+						report := fmt.Sprintf("🔔 *Scheduled Task executed: %s*\nStatus: %s\n\n*Output:*\n```\n%s\n```", task.Name, status, out)
+						_, _ = r.tgClient.SendMessage(context.Background(), r.chatID, report)
+					case <-taskCtx.Done():
+						log.Printf("[Scheduler] Task '%s' has been cancelled.", task.Name)
+						return
+					}
+				}
+			}()
+
+			return fmt.Sprintf("Successfully scheduled task '%s' to run every %d minutes.", name, intervalMin), nil
+		},
+	}
+
+	// 9. list_scheduled_tasks
+	r.tools["list_scheduled_tasks"] = ToolDefinition{
+		Declaration: FunctionDeclaration{
+			Name:        "list_scheduled_tasks",
+			Description: "List all currently scheduled periodic commands",
+			Parameters: FunctionParameter{
+				Type:       "OBJECT",
+				Properties: map[string]FunctionParameter{},
+			},
+		},
+		IsStateful: false,
+		Execute: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			r.schedulerMutex.Lock()
+			defer r.schedulerMutex.Unlock()
+
+			if len(r.schedulerTasks) == 0 {
+				return "No scheduled tasks are running.", nil
+			}
+
+			var lines []string
+			for _, t := range r.schedulerTasks {
+				lines = append(lines, fmt.Sprintf("- Name: `%s` | Interval: every %s | Command: `%s`", t.Name, t.Interval, t.Command))
+			}
+			return strings.Join(lines, "\n"), nil
+		},
+	}
+
+	// 10. unschedule_task
+	r.tools["unschedule_task"] = ToolDefinition{
+		Declaration: FunctionDeclaration{
+			Name:        "unschedule_task",
+			Description: "Cancel and remove a scheduled task by name",
+			Parameters: FunctionParameter{
+				Type: "OBJECT",
+				Properties: map[string]FunctionParameter{
+					"name": {
+						Type:        "STRING",
+						Description: "The unique name of the scheduled task to cancel",
+					},
+				},
+				Required: []string{"name"},
+			},
+		},
+		IsStateful: true,
+		Execute: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			name, ok := args["name"].(string)
+			if !ok || name == "" {
+				return "", fmt.Errorf("missing or invalid 'name'")
+			}
+
+			r.schedulerMutex.Lock()
+			defer r.schedulerMutex.Unlock()
+
+			task, exists := r.schedulerTasks[name]
+			if !exists {
+				return fmt.Sprintf("Task '%s' not found.", name), nil
+			}
+
+			task.Cancel()
+			delete(r.schedulerTasks, name)
+			return fmt.Sprintf("Successfully cancelled scheduled task '%s'.", name), nil
+		},
+	}
+
+	// 11. web_scrape
+	r.tools["web_scrape"] = ToolDefinition{
+		Declaration: FunctionDeclaration{
+			Name:        "web_scrape",
+			Description: "Scrape text content from a web page or online documentation URL",
+			Parameters: FunctionParameter{
+				Type: "OBJECT",
+				Properties: map[string]FunctionParameter{
+					"url": {
+						Type:        "STRING",
+						Description: "The absolute HTTP/HTTPS URL of the page to scrape",
+					},
+				},
+				Required: []string{"url"},
+			},
+		},
+		IsStateful: false,
+		Execute: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			targetURL, ok := args["url"].(string)
+			if !ok || targetURL == "" {
+				return "", fmt.Errorf("missing or invalid 'url' argument")
+			}
+			return WebScrape(targetURL)
+		},
+	}
+
+	// 12. web_crawl
+	r.tools["web_crawl"] = ToolDefinition{
+		Declaration: FunctionDeclaration{
+			Name:        "web_crawl",
+			Description: "Discover same-domain links on a web page to explore documentation structure",
+			Parameters: FunctionParameter{
+				Type: "OBJECT",
+				Properties: map[string]FunctionParameter{
+					"url": {
+						Type:        "STRING",
+						Description: "The absolute HTTP/HTTPS URL to crawl",
+					},
+				},
+				Required: []string{"url"},
+			},
+		},
+		IsStateful: false,
+		Execute: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			targetURL, ok := args["url"].(string)
+			if !ok || targetURL == "" {
+				return "", fmt.Errorf("missing or invalid 'url' argument")
+			}
+			links, err := WebCrawl(targetURL)
+			if err != nil {
+				return "", err
+			}
+			if len(links) == 0 {
+				return "No same-domain links discovered.", nil
+			}
+			return strings.Join(links, "\n"), nil
+		},
+	}
+
+	// 13. web_search
+	r.tools["web_search"] = ToolDefinition{
+		Declaration: FunctionDeclaration{
+			Name:        "web_search",
+			Description: "Search the web using DuckDuckGo (no API key required) to find documentation, instructions, or troubleshoot problems",
+			Parameters: FunctionParameter{
+				Type: "OBJECT",
+				Properties: map[string]FunctionParameter{
+					"query": {
+						Type:        "STRING",
+						Description: "The search query to look up on the web",
+					},
+				},
+				Required: []string{"query"},
+			},
+		},
+		IsStateful: false,
+		Execute: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			query, ok := args["query"].(string)
+			if !ok || query == "" {
+				return "", fmt.Errorf("missing or invalid 'query' argument")
+			}
+			return SearchDuckDuckGo(query)
 		},
 	}
 }

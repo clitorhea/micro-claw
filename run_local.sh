@@ -2,12 +2,12 @@
 # MicroClaw local development/testing run script
 
 # 1. Export mandatory Telegram bot credentials
-export TELEGRAM_BOT_TOKEN="YOUR_TELEGRAM_BOT_TOKEN_HERE"
-export TELEGRAM_USER_ID="YOUR_TELEGRAM_USER_ID_HERE" # Authorized user ID (integer)
+export TELEGRAM_BOT_TOKEN="8870813999:AAE4BcwncIpr_9Ko0-m78Nawbgwz0XNHj5I"
+export TELEGRAM_USER_ID="6034654879" # Authorized user ID (integer)
 
 # 2. Export LLM settings (Select "gemini" or "deepseek")
 export LLM_PROVIDER="deepseek"
-export LLM_API_KEY="YOUR_LLM_API_KEY_HERE"
+export LLM_API_KEY="sk-693313ec755f4005bd79f88bfe3ea126"
 export LLM_MODEL="deepseek-v4-flash"
 
 # 3. Export monitoring variables (reduced interval to 1 minute for faster testing iterations)

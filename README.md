@@ -81,10 +81,16 @@ To save LLM API costs and request information instantly, MicroClaw intercepts co
 * `check_zpool_status()`: Queries system `zpool status` metrics.
 * `get_disk_usage()`: Evaluates filesystem usage via `df -h`.
 * `search_past_logs(query)`: RAG-style query tool that searches the append-only `.jsonl` history logs file on disk for matching keywords.
+* `list_scheduled_tasks()`: Lists all currently scheduled background tasks.
+* `web_scrape(url)`: Fetches a URL and strips HTML tags, script, and style blocks to output raw clean text.
+* `web_crawl(url)`: Extracts and resolves all same-domain hyperlinks from a target URL.
+* `web_search(query)`: Performs an API-key-free Google-style web query leveraging DuckDuckGo HTML scraping.
 
 ### 2. State-Changing (Approval-Gated)
 * `restart_container(name)`
 * `stop_container(name)`
+* `schedule_task(name, interval_minutes, command)`: Spawns a background worker executing the command repeatedly, piping success/failure output directly to your Telegram chat.
+* `unschedule_task(name)`: Cancels and tears down a scheduled task worker by name.
 
 **Approval Lifecycle**:
 1. Agent decides to call `restart_container(name="db")`.
