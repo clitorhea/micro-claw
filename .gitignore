@@ -1,5 +1,4 @@
 # Compiled binaries
-nas-watchdog
 *.exe
 *.exe~
 *.dll
