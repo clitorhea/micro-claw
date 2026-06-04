@@ -23,7 +23,5 @@ nas-watchdog.jsonl
 .DS_Store
 Thumbs.db
 
-push_to_dockerhub.sh
-
 # Local environment secret files
 .env

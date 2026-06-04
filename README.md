@@ -127,6 +127,39 @@ You can run and test the daemon locally on any Linux host directly using Go:
    ./run_local.sh
    ```
    *Note: In local mode, the daemon checks `/proc` statistics directly on your host machine. The monitoring checks run at a speed-up interval of 1 minute (instead of 5 minutes) by default for quick testing loops.*
+---
+
+## Production Systemd Service (Recommended for Native/NAS)
+
+For running the daemon persistently on host distributions (like CachyOS, Debian, or TrueNAS Scale) without Docker:
+
+1. Create a dedicated system user and group for security:
+   ```bash
+   sudo useradd -r -s /usr/bin/nologin microclaw
+   sudo usermod -aG docker microclaw  # Grant access to run Docker commands
+   ```
+2. Create the systemd service unit file at `/etc/systemd/system/microclaw.service`:
+   ```ini
+   [Unit]
+   Description=MicroClaw NAS Watchdog Daemon
+   After=network.target
+
+   [Service]
+   Type=simple
+   User=microclaw
+   Group=microclaw
+   WorkingDirectory=/home/rhea/workspace/micro-claw
+   ExecStart=/home/rhea/workspace/micro-claw/run_local.sh
+   Restart=on-failure
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+3. Enable and start the service:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now microclaw.service
+   ```
 
 ---
 
@@ -141,3 +174,4 @@ You can run and test the daemon locally on any Linux host directly using Go:
    - `/var/run/docker.sock:/var/run/docker.sock:ro` (Allows executing docker stats / logs commands)
    - `/:/host:ro` (Permits checking host-level storage volume limits)
    - `./data:/app/data` (Stores persistent history logs `.jsonl` files)
+
