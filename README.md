@@ -117,13 +117,16 @@ If the LLM provider (Gemini or DeepSeek) is down, rate-limited, or if the NAS ne
 
 You can run and test the daemon locally on any Linux host directly using Go:
 
-1. Clone or copy the project files to your directory.
-2. Edit [run_local.sh](file:///home/rhea/workspace/micro-claw/run_local.sh) to input your API credentials and Telegram user ID.
-3. Start the daemon:
+1. Copy the environment variables template to `.env` (which is configured in `.gitignore` to keep your credentials safe from Git tracking):
+   ```bash
+   cp .env.example .env
+   ```
+2. Open `.env` and fill in your Telegram credentials and LLM API keys.
+3. Start the local daemon:
    ```bash
    ./run_local.sh
    ```
-   *Note: In local mode, the daemon checks `/proc` statistics directly on your test machine. The monitoring checks run at a speed-up interval of 1 minute (instead of 5 minutes) for quick testing loops.*
+   *Note: In local mode, the daemon checks `/proc` statistics directly on your host machine. The monitoring checks run at a speed-up interval of 1 minute (instead of 5 minutes) by default for quick testing loops.*
 
 ---
 

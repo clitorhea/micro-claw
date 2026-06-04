@@ -13,9 +13,9 @@ import (
 var hrefRegex = regexp.MustCompile(`(?i)href=["']([^"']+)["']`)
 
 // WebScrape fetches a URL and strips HTML tags to return clean plain text.
-func WebScrape(targetURL string) (string, error) {
+func WebScrape(targetURL string, timeout time.Duration) (string, error) {
 	client := &http.Client{
-		Timeout: 15 * time.Second,
+		Timeout: timeout,
 	}
 
 	resp, err := client.Get(targetURL)
@@ -37,9 +37,9 @@ func WebScrape(targetURL string) (string, error) {
 }
 
 // WebCrawl crawls a URL, extracts all hyperlinks, and filters those belonging to the same host domain.
-func WebCrawl(targetURL string) ([]string, error) {
+func WebCrawl(targetURL string, timeout time.Duration) ([]string, error) {
 	client := &http.Client{
-		Timeout: 15 * time.Second,
+		Timeout: timeout,
 	}
 
 	parsedTarget, err := url.Parse(targetURL)
@@ -134,9 +134,9 @@ func CleanHTML(html string) string {
 }
 
 // SearchDuckDuckGo searches the web using DuckDuckGo's HTML search interface.
-func SearchDuckDuckGo(query string) (string, error) {
+func SearchDuckDuckGo(query string, timeout time.Duration, maxResults int) (string, error) {
 	client := &http.Client{
-		Timeout: 15 * time.Second,
+		Timeout: timeout,
 	}
 
 	reqUrl := "https://html.duckduckgo.com/html/?q=" + url.QueryEscape(query)
@@ -175,8 +175,8 @@ func SearchDuckDuckGo(query string) (string, error) {
 	if len(snippets) < limit {
 		limit = len(snippets)
 	}
-	if limit > 6 {
-		limit = 6 // Return top 6 search results
+	if limit > maxResults {
+		limit = maxResults
 	}
 
 	for i := 0; i < limit; i++ {

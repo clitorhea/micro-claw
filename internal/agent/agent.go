@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"micro-claw/internal/config"
@@ -113,24 +114,68 @@ type LogEntry struct {
 }
 
 type Agent struct {
-	cfg        *config.Config
-	tgClient   *telegram.Client
-	registry   *tools.Registry
-	history    []Content
-	historyMu  sync.Mutex
-	httpClient *http.Client
+	cfg           *config.Config
+	tgClient      *telegram.Client
+	registry      *tools.Registry
+	history       []Content
+	historyMu     sync.Mutex
+	httpClient    *http.Client
+	maxIterations int32
 }
 
 func NewAgent(cfg *config.Config, tgClient *telegram.Client, registry *tools.Registry) *Agent {
-	return &Agent{
+	a := &Agent{
 		cfg:      cfg,
 		tgClient: tgClient,
 		registry: registry,
 		history:  make([]Content, 0),
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: time.Duration(cfg.LLMTimeoutSeconds) * time.Second,
 		},
+		maxIterations: 15,
 	}
+
+	// Register a tool so the agent can adjust its own maxIterations if needed
+	registry.Register("adjust_max_iterations", tools.ToolDefinition{
+		Declaration: tools.FunctionDeclaration{
+			Name:        "adjust_max_iterations",
+			Description: "Temporarily adjust the maximum conversation/tool execution iterations (depth) allowed for the current run.",
+			Parameters: tools.FunctionParameter{
+				Type: "OBJECT",
+				Properties: map[string]tools.FunctionParameter{
+					"limit": {
+						Type:        "INTEGER",
+						Description: "The new maximum number of iterations allowed (recommended between 5 and 30).",
+					},
+				},
+				Required: []string{"limit"},
+			},
+		},
+		IsStateful: false,
+		Execute: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			limitVal, ok := args["limit"]
+			if !ok {
+				return "", fmt.Errorf("missing limit argument")
+			}
+			var newLimit int32
+			if fVal, ok := limitVal.(float64); ok {
+				newLimit = int32(fVal)
+			} else if iVal, ok := limitVal.(int); ok {
+				newLimit = int32(iVal)
+			} else if i32Val, ok := limitVal.(int32); ok {
+				newLimit = i32Val
+			} else {
+				return "", fmt.Errorf("invalid limit type")
+			}
+			if newLimit < 1 {
+				return "", fmt.Errorf("limit must be at least 1")
+			}
+			atomic.StoreInt32(&a.maxIterations, newLimit)
+			return fmt.Sprintf("Successfully adjusted maximum iterations to %d for the current run", newLimit), nil
+		},
+	})
+
+	return a
 }
 
 func (a *Agent) Config() *config.Config {
@@ -195,9 +240,14 @@ func (a *Agent) HandleAnomaly(ctx context.Context, anomalyPayload string) {
 }
 
 func (a *Agent) runConversationLoop(ctx context.Context) {
-	const maxIterations = 5
+	for i := 0; ; i++ {
+		maxIterations := int(atomic.LoadInt32(&a.maxIterations))
+		if i >= maxIterations {
+			log.Printf("[Agent] Reached max iterations limit (%d)", maxIterations)
+			_, _ = a.tgClient.SendMessage(ctx, a.cfg.TelegramUserID, "⚠️ *Limit Exceeded:* Conversation exceeded maximum tool execution depth.")
+			return
+		}
 
-	for i := 0; i < maxIterations; i++ {
 		a.pruneHistory()
 
 		log.Printf("[Agent] Calling LLM (%s - iteration %d/%d)...", a.cfg.LLMProvider, i+1, maxIterations)
@@ -207,9 +257,9 @@ func (a *Agent) runConversationLoop(ctx context.Context) {
 			
 			// Local offline diagnostic report fallback
 			fallbackMsg := fmt.Sprintf("⚠️ *LLM Service Offline* (%v)\n\nI was unable to consult the AI router. Running direct system diagnosis...\n\n", err)
-			cpu, mem, disk, sysErr := metrics.GetSystemMetrics()
+			cpu, mem, disk, sysErr := metrics.GetSystemMetrics(a.cfg.DiskMountPath)
 			if sysErr == nil {
-				topProc, _ := metrics.GetTopProcesses()
+				topProc, _ := metrics.GetTopProcesses(a.cfg.TopProcessesLimit)
 				fallbackMsg += fmt.Sprintf("*Current Load Metrics:*\n- CPU: %.2f%%\n- Memory: %.2f%%\n- Disk Space: %.2f%%\n\n*Top Processes:*\n```\n%s\n```\n", cpu, mem, disk, topProc)
 			} else {
 				fallbackMsg += fmt.Sprintf("❌ *Failed to fetch diagnostics:* %v\n", sysErr)
@@ -286,9 +336,6 @@ func (a *Agent) runConversationLoop(ctx context.Context) {
 		}
 		return
 	}
-
-	log.Printf("[Agent] Reached max iterations limit (%d)", maxIterations)
-	_, _ = a.tgClient.SendMessage(ctx, a.cfg.TelegramUserID, "⚠️ *Limit Exceeded:* Conversation exceeded maximum tool execution depth.")
 }
 
 func (a *Agent) callLLM(ctx context.Context) (*Content, error) {

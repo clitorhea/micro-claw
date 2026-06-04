@@ -24,3 +24,6 @@ nas-watchdog.jsonl
 Thumbs.db
 
 push_to_dockerhub.sh
+
+# Local environment secret files
+.env

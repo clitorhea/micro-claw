@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func GetSystemMetrics() (cpu, mem, disk float64, err error) {
+func GetSystemMetrics(diskMountPath string) (cpu, mem, disk float64, err error) {
 	cpu, err = getCPUUsage()
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to get CPU: %w", err)
@@ -21,7 +21,7 @@ func GetSystemMetrics() (cpu, mem, disk float64, err error) {
 		return 0, 0, 0, fmt.Errorf("failed to get Memory: %w", err)
 	}
 
-	disk, err = getDiskUsage()
+	disk, err = getDiskUsage(diskMountPath)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to get Disk: %w", err)
 	}
@@ -29,14 +29,13 @@ func GetSystemMetrics() (cpu, mem, disk float64, err error) {
 	return cpu, mem, disk, nil
 }
 
-func GetTopProcesses() (string, error) {
+func GetTopProcesses(limit int) (string, error) {
 	cmd := exec.Command("top", "-b", "-n", "1")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
 	lines := strings.Split(string(out), "\n")
-	limit := 15
 	if len(lines) < limit {
 		limit = len(lines)
 	}
@@ -133,8 +132,7 @@ func getMemoryUsage() (float64, error) {
 	return float64(used) / float64(memTotal) * 100.0, nil
 }
 
-func getDiskUsage() (float64, error) {
-	path := "/host"
+func getDiskUsage(path string) (float64, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		path = "/"
 	}

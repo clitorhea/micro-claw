@@ -6,17 +6,23 @@ import (
 )
 
 type Config struct {
-	TelegramToken        string
-	TelegramUserID       int64
-	LLMProvider          string // "gemini" or "deepseek"
-	LLMAPIKey            string
-	LLMModel             string
-	LLMAPIURL            string
-	CheckIntervalMinutes int
-	CPUThreshold         float64
-	MemoryThreshold      float64
-	DiskThreshold        float64
-	LogFilePath          string
+	TelegramToken              string
+	TelegramUserID             int64
+	LLMProvider                string // "gemini" or "deepseek"
+	LLMAPIKey                  string
+	LLMModel                   string
+	LLMAPIURL                  string
+	CheckIntervalMinutes       int
+	CPUThreshold               float64
+	MemoryThreshold            float64
+	DiskThreshold              float64
+	LogFilePath                string
+	UserApprovalTimeoutMinutes int
+	LLMTimeoutSeconds          int
+	WebScraperTimeoutSeconds   int
+	MaxSearchResults           int
+	DiskMountPath              string
+	TopProcessesLimit          int
 }
 
 func LoadConfig() (*Config, error) {
@@ -113,17 +119,68 @@ func LoadConfig() (*Config, error) {
 		logPath = "nas-watchdog.jsonl"
 	}
 
+	userApprovalTimeoutStr := os.Getenv("USER_APPROVAL_TIMEOUT_MINUTES")
+	userApprovalTimeout := 10
+	if userApprovalTimeoutStr != "" {
+		if val, err := strconv.Atoi(userApprovalTimeoutStr); err == nil {
+			userApprovalTimeout = val
+		}
+	}
+
+	llmTimeoutStr := os.Getenv("LLM_TIMEOUT_SECONDS")
+	llmTimeout := 60
+	if llmTimeoutStr != "" {
+		if val, err := strconv.Atoi(llmTimeoutStr); err == nil {
+			llmTimeout = val
+		}
+	}
+
+	webScraperTimeoutStr := os.Getenv("WEB_SCRAPER_TIMEOUT_SECONDS")
+	webScraperTimeout := 15
+	if webScraperTimeoutStr != "" {
+		if val, err := strconv.Atoi(webScraperTimeoutStr); err == nil {
+			webScraperTimeout = val
+		}
+	}
+
+	maxSearchResultsStr := os.Getenv("MAX_SEARCH_RESULTS")
+	maxSearchResults := 6
+	if maxSearchResultsStr != "" {
+		if val, err := strconv.Atoi(maxSearchResultsStr); err == nil {
+			maxSearchResults = val
+		}
+	}
+
+	diskMountPath := os.Getenv("DISK_MOUNT_PATH")
+	if diskMountPath == "" {
+		diskMountPath = "/host"
+	}
+
+	topProcessesLimitStr := os.Getenv("TOP_PROCESSES_LIMIT")
+	topProcessesLimit := 15
+	if topProcessesLimitStr != "" {
+		if val, err := strconv.Atoi(topProcessesLimitStr); err == nil {
+			topProcessesLimit = val
+		}
+	}
+
 	return &Config{
-		TelegramToken:        token,
-		TelegramUserID:       userID,
-		LLMProvider:          provider,
-		LLMAPIKey:            apiKey,
-		LLMModel:             model,
-		LLMAPIURL:            apiURL,
-		CheckIntervalMinutes: interval,
-		CPUThreshold:         cpuThresh,
-		MemoryThreshold:      memThresh,
-		DiskThreshold:        diskThresh,
-		LogFilePath:          logPath,
+		TelegramToken:              token,
+		TelegramUserID:             userID,
+		LLMProvider:                provider,
+		LLMAPIKey:                  apiKey,
+		LLMModel:                   model,
+		LLMAPIURL:                  apiURL,
+		CheckIntervalMinutes:       interval,
+		CPUThreshold:               cpuThresh,
+		MemoryThreshold:            memThresh,
+		DiskThreshold:              diskThresh,
+		LogFilePath:                logPath,
+		UserApprovalTimeoutMinutes: userApprovalTimeout,
+		LLMTimeoutSeconds:          llmTimeout,
+		WebScraperTimeoutSeconds:   webScraperTimeout,
+		MaxSearchResults:           maxSearchResults,
+		DiskMountPath:              diskMountPath,
+		TopProcessesLimit:          topProcessesLimit,
 	}, nil
 }

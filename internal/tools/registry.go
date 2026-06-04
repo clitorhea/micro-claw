@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"micro-claw/internal/config"
 	"micro-claw/internal/telegram"
 )
 
@@ -47,6 +48,7 @@ type ScheduledTask struct {
 }
 
 type Registry struct {
+	cfg            *config.Config
 	tgClient       *telegram.Client
 	chatID         int64
 	tools          map[string]ToolDefinition
@@ -59,8 +61,9 @@ type Registry struct {
 	schedulerMutex sync.Mutex
 }
 
-func NewRegistry(tgClient *telegram.Client, chatID int64) *Registry {
+func NewRegistry(cfg *config.Config, tgClient *telegram.Client, chatID int64) *Registry {
 	r := &Registry{
+		cfg:            cfg,
 		tgClient:       tgClient,
 		chatID:         chatID,
 		tools:          make(map[string]ToolDefinition),
@@ -163,7 +166,7 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]int
 			return "Action rejected by user. Command was NOT executed.", nil
 		}
 
-	case <-time.After(10 * time.Minute):
+	case <-time.After(time.Duration(r.cfg.UserApprovalTimeoutMinutes) * time.Minute):
 		r.mutex.Lock()
 		msgID, ok := r.pendingMsgs[actionID]
 		delete(r.pendingActions, actionID)
@@ -171,7 +174,7 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]int
 		r.mutex.Unlock()
 
 		if ok {
-			timeoutText := fmt.Sprintf("⏰ *Timed Out:* `%s` with args `%+v` (no response in 10 minutes)", name, args)
+			timeoutText := fmt.Sprintf("⏰ *Timed Out:* `%s` with args `%+v` (no response in %d minutes)", name, args, r.cfg.UserApprovalTimeoutMinutes)
 			_ = r.tgClient.EditMessageText(ctx, r.chatID, msgID, timeoutText)
 		}
 		return "Action timed out waiting for approval. Command was NOT executed.", nil
@@ -602,7 +605,7 @@ func (r *Registry) registerAllTools() {
 			if !ok || targetURL == "" {
 				return "", fmt.Errorf("missing or invalid 'url' argument")
 			}
-			return WebScrape(targetURL)
+			return WebScrape(targetURL, time.Duration(r.cfg.WebScraperTimeoutSeconds)*time.Second)
 		},
 	}
 
@@ -628,7 +631,7 @@ func (r *Registry) registerAllTools() {
 			if !ok || targetURL == "" {
 				return "", fmt.Errorf("missing or invalid 'url' argument")
 			}
-			links, err := WebCrawl(targetURL)
+			links, err := WebCrawl(targetURL, time.Duration(r.cfg.WebScraperTimeoutSeconds)*time.Second)
 			if err != nil {
 				return "", err
 			}
@@ -661,7 +664,7 @@ func (r *Registry) registerAllTools() {
 			if !ok || query == "" {
 				return "", fmt.Errorf("missing or invalid 'query' argument")
 			}
-			return SearchDuckDuckGo(query)
+			return SearchDuckDuckGo(query, time.Duration(r.cfg.WebScraperTimeoutSeconds)*time.Second, r.cfg.MaxSearchResults)
 		},
 	}
 }
@@ -680,3 +683,11 @@ func generateActionID() string {
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
+
+// Register allows registering custom tools dynamically after Registry initialization.
+func (r *Registry) Register(name string, def ToolDefinition) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.tools[name] = def
+}
+

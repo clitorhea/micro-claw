@@ -35,7 +35,7 @@ func main() {
 	tgClient := telegram.NewClient(cfg.TelegramToken, cfg.TelegramUserID)
 
 	// 3. Initialize Tool Registry
-	registry := tools.NewRegistry(tgClient, cfg.TelegramUserID)
+	registry := tools.NewRegistry(cfg, tgClient, cfg.TelegramUserID)
 
 	// 4. Initialize LLM Agent Router
 	agentRouter := agent.NewAgent(cfg, tgClient, registry)
@@ -108,7 +108,7 @@ func runHealthCheckLoop(ctx context.Context, cfg *config.Config, router *agent.A
 			return
 		case <-ticker.C:
 			log.Println("[Watchdog] Executing health check...")
-			cpu, mem, disk, err := metrics.GetSystemMetrics()
+			cpu, mem, disk, err := metrics.GetSystemMetrics(cfg.DiskMountPath)
 			if err != nil {
 				log.Printf("[Watchdog] Error reading system metrics: %v", err)
 				continue
@@ -128,7 +128,7 @@ func runHealthCheckLoop(ctx context.Context, cfg *config.Config, router *agent.A
 			}
 
 			if len(anomalies) > 0 {
-				topProc, _ := metrics.GetTopProcesses()
+				topProc, _ := metrics.GetTopProcesses(cfg.TopProcessesLimit)
 				payload := fmt.Sprintf("System Thresholds Breached:\n%s\n\n*Current Top Processes (host):*\n```\n%s\n```",
 					strings.Join(anomalies, "\n"), topProc)
 				go router.HandleAnomaly(ctx, payload)
@@ -159,12 +159,12 @@ func handleTelegramCommand(ctx context.Context, text string, tgClient *telegram.
 		_, _ = tgClient.SendMessage(ctx, chatID, "🧹 *Conversation history cleared.*")
 
 	case "/stats":
-		cpu, mem, disk, err := metrics.GetSystemMetrics()
+		cpu, mem, disk, err := metrics.GetSystemMetrics(router.Config().DiskMountPath)
 		if err != nil {
 			_, _ = tgClient.SendMessage(ctx, chatID, fmt.Sprintf("❌ *Failed to fetch metrics:* %v", err))
 			return
 		}
-		topProc, _ := metrics.GetTopProcesses()
+		topProc, _ := metrics.GetTopProcesses(router.Config().TopProcessesLimit)
 		report := fmt.Sprintf("📊 *System Resource Metrics*\n\n"+
 			"*CPU:* %.2f%%\n"+
 			"*Memory:* %.2f%%\n"+
