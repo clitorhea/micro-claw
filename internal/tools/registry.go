@@ -667,6 +667,36 @@ func (r *Registry) registerAllTools() {
 			return SearchDuckDuckGo(query, time.Duration(r.cfg.WebScraperTimeoutSeconds)*time.Second, r.cfg.MaxSearchResults)
 		},
 	}
+
+	// 14. execute_shell_command
+	r.tools["execute_shell_command"] = ToolDefinition{
+		Declaration: FunctionDeclaration{
+			Name:        "execute_shell_command",
+			Description: "Execute a shell command on the host NAS system and return its combined stdout and stderr. This tool requires manual user approval via Telegram.",
+			Parameters: FunctionParameter{
+				Type: "OBJECT",
+				Properties: map[string]FunctionParameter{
+					"command": {
+						Type:        "STRING",
+						Description: "The shell command to execute (e.g. 'ls -la /', 'uptime', etc.)",
+					},
+				},
+				Required: []string{"command"},
+			},
+		},
+		IsStateful: true,
+		Execute: func(ctx context.Context, args map[string]interface{}) (string, error) {
+			command, ok := args["command"].(string)
+			if !ok || command == "" {
+				return "", fmt.Errorf("missing or invalid 'command' argument")
+			}
+			out, err := runCmd("sh", "-c", command)
+			if err != nil {
+				return fmt.Sprintf("Command failed with error: %v\nOutput:\n%s", err, out), nil
+			}
+			return out, nil
+		},
+	}
 }
 
 func runCmd(name string, args ...string) (string, error) {

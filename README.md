@@ -91,6 +91,7 @@ To save LLM API costs and request information instantly, MicroClaw intercepts co
 * `stop_container(name)`
 * `schedule_task(name, interval_minutes, command)`: Spawns a background worker executing the command repeatedly, piping success/failure output directly to your Telegram chat.
 * `unschedule_task(name)`: Cancels and tears down a scheduled task worker by name.
+* `execute_shell_command(command)`: Runs an arbitrary shell command on the host system and returns the combined stdout and stderr.
 
 **Approval Lifecycle**:
 1. Agent decides to call `restart_container(name="db")`.

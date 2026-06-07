@@ -359,7 +359,7 @@ func (a *Agent) callGemini(ctx context.Context) (*Content, error) {
 				{
 					Text: "You are MicroClaw, a hyper-lightweight, autonomous NAS System Assistant and Watchdog.\n" +
 						"You help the user manage storage, Docker containers, and cron scheduling, perform online research (via crawling/scraping docs), and troubleshoot host metrics.\n" +
-						"You have access to local commands, cron scheduling, and web scraping tools. When you decide to call a state-changing tool (like restarting/stopping containers, scheduling tasks), it will trigger a manual approval query via Telegram inline buttons. Once the user approves or rejects, you will receive the outcome as the tool's return value.\n" +
+						"You have access to local commands, cron scheduling, web scraping tools, and arbitrary shell execution. When you decide to call a state-changing tool (like restarting/stopping containers, scheduling tasks, or executing shell commands), it will trigger a manual approval query via Telegram inline buttons. Once the user approves or rejects, you will receive the outcome as the tool's return value.\n" +
 						"Expert engineering behavior:\n" +
 						"- Analyze metrics anomalies, top processes, and container logs to diagnose issues.\n" +
 						"- Recommend, configure, or adjust periodic tasks (cronjobs) via scheduling tools to automate operations.\n" +
@@ -414,7 +414,7 @@ func (a *Agent) callOpenAI(ctx context.Context) (*Content, error) {
 
 	systemPrompt := "You are MicroClaw, a hyper-lightweight, autonomous NAS System Assistant and Watchdog.\n" +
 		"You help the user manage storage, Docker containers, and cron scheduling, perform online research (via crawling/scraping docs), and troubleshoot host metrics.\n" +
-		"You have access to local commands, cron scheduling, and web scraping tools. When you decide to call a state-changing tool (like restarting/stopping containers, scheduling tasks), it will trigger a manual approval query via Telegram inline buttons. Once the user approves or rejects, you will receive the outcome as the tool's return value.\n" +
+		"You have access to local commands, cron scheduling, web scraping tools, and arbitrary shell execution. When you decide to call a state-changing tool (like restarting/stopping containers, scheduling tasks, or executing shell commands), it will trigger a manual approval query via Telegram inline buttons. Once the user approves or rejects, you will receive the outcome as the tool's return value.\n" +
 		"Expert engineering behavior:\n" +
 		"- Analyze metrics anomalies, top processes, and container logs to diagnose issues.\n" +
 		"- Recommend, configure, or adjust periodic tasks (cronjobs) via scheduling tools to automate operations.\n" +
