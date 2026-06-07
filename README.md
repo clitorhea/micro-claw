@@ -134,33 +134,64 @@ You can run and test the daemon locally on any Linux host directly using Go:
 
 For running the daemon persistently on host distributions (like CachyOS, Debian, or TrueNAS Scale) without Docker:
 
-1. Create a dedicated system user and group for security:
-   ```bash
-   sudo useradd -r -s /usr/bin/nologin microclaw
-   sudo usermod -aG docker microclaw  # Grant access to run Docker commands
-   ```
-2. Create the systemd service unit file at `/etc/systemd/system/microclaw.service`:
-   ```ini
-   [Unit]
-   Description=MicroClaw NAS Watchdog Daemon
-   After=network.target
+### 1. Compile the Binary
+Build a production-optimized, statically-linked binary and place it in a system executable directory:
+```bash
+go build -ldflags="-s -w" -o microclaw ./cmd/nas-watchdog
+sudo mv microclaw /usr/local/bin/
+```
 
-   [Service]
-   Type=simple
-   User=microclaw
-   Group=microclaw
-   WorkingDirectory=/home/rhea/workspace/micro-claw
-   ExecStart=/home/rhea/workspace/micro-claw/run_local.sh
-   Restart=on-failure
+### 2. Create the System User, Configuration, and Log Directories
+Create a dedicated user and group for the daemon, and set up configuration and log paths:
+```bash
+# Create system user
+sudo useradd -r -s /usr/bin/nologin microclaw
+sudo usermod -aG docker microclaw  # Grant access to run Docker commands
 
-   [Install]
-   WantedBy=multi-user.target
-   ```
-3. Enable and start the service:
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now microclaw.service
-   ```
+# Create configuration directory
+sudo mkdir -p /etc/microclaw
+sudo cp .env.example /etc/microclaw/microclaw.env
+sudo chown -R microclaw:microclaw /etc/microclaw
+sudo chmod 600 /etc/microclaw/microclaw.env  # Keep credentials secure
+
+# Create log directory
+sudo mkdir -p /var/log/microclaw
+sudo chown -R microclaw:microclaw /var/log/microclaw
+```
+> [!IMPORTANT]
+> Make sure to open `/etc/microclaw/microclaw.env` and update the parameters, specifically changing `LOG_FILE_PATH` to `/var/log/microclaw/nas-watchdog.jsonl`.
+
+### 3. Create the Systemd Service Unit File
+Create the unit file at `/etc/systemd/system/microclaw.service`:
+```ini
+[Unit]
+Description=MicroClaw NAS Watchdog Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=microclaw
+Group=microclaw
+WorkingDirectory=/var/log/microclaw
+EnvironmentFile=/etc/microclaw/microclaw.env
+ExecStart=/usr/local/bin/microclaw
+Restart=on-failure
+RestartSec=5s
+
+# Security Sandboxing
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 4. Enable and Start the Service
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now microclaw.service
+```
 
 ---
 
